@@ -140,13 +140,12 @@ def interpret_query_with_llm(user_query):
 
 
 def parse_llm_output(output):
-    lines = output.split("\n")
-    action = None
+    action = ""
     order_id = None
 
-    for line in lines:
+    for line in output.split("\n"):
         if "action" in line.lower():
-            action = line.split(":")[-1].strip().upper()
+            action = line.split(":")[-1].strip().upper().replace(" ", "_")
         if "order_id" in line.lower():
             order_id = line.split(":")[-1].strip()
 
@@ -174,8 +173,10 @@ if query:
             llm_output = interpret_query_with_llm(query)
             action, order_id = parse_llm_output(llm_output)
 
-        # 🔥 FLEXIBLE MATCHING (FIXED)
-        if action and "TRACE" in action and order_id != "NONE":
+        query_lower = query.lower()
+
+        # 🔥 PRIMARY (LLM)
+        if action and "TRACE" in action and order_id and order_id != "NONE":
             flow = trace_flow(order_id)
             st.success("📦 Order Flow:\n\n" + "\n➡️ ".join(flow))
 
@@ -184,6 +185,20 @@ if query:
             st.write(broken_orders())
 
         elif action and "TOP" in action:
+            st.info("📊 Top Orders:")
+            st.write(top_orders())
+
+        # 🔥 FALLBACK (RULE-BASED — VERY IMPORTANT)
+        elif "trace" in query_lower:
+            order_id = ''.join(filter(str.isdigit, query))
+            flow = trace_flow(order_id)
+            st.success("📦 Order Flow:\n\n" + "\n➡️ ".join(flow))
+
+        elif "broken" in query_lower:
+            st.error("❌ Broken Orders:")
+            st.write(broken_orders())
+
+        elif "top" in query_lower:
             st.info("📊 Top Orders:")
             st.write(top_orders())
 
