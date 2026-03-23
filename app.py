@@ -6,12 +6,10 @@ import os
 from groq import Groq
 
 # =========================
-# 🔑 SET YOUR API KEY
+# 🔑 LOAD API KEY (LOCAL + STREAMLIT)
 # =========================
-from dotenv import load_dotenv
-
-load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+client = Groq(api_key=api_key)
 
 # =========================
 # LOAD FUNCTION
@@ -42,7 +40,6 @@ invoice_items = load_jsonl(f"{base_path}/billing_document_items")
 # =========================
 G = nx.DiGraph()
 
-# Nodes
 for _, row in sales_orders.iterrows():
     if row.get('salesOrder'):
         G.add_node(f"ORDER_{row['salesOrder']}")
@@ -79,7 +76,7 @@ def trace_flow(order_id):
     result = []
 
     if node not in G:
-        return ["Order not found"]
+        return ["❌ Order not found in dataset"]
 
     while True:
         neighbors = list(G.successors(node))
@@ -135,7 +132,7 @@ def interpret_query_with_llm(user_query):
     """
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",   # ✅ latest working model
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}]
     )
 
@@ -149,7 +146,7 @@ def parse_llm_output(output):
 
     for line in lines:
         if "action" in line.lower():
-            action = line.split(":")[-1].strip()
+            action = line.split(":")[-1].strip().upper()
         if "order_id" in line.lower():
             order_id = line.split(":")[-1].strip()
 
@@ -159,6 +156,8 @@ def parse_llm_output(output):
 # =========================
 # UI
 # =========================
+
+st.info("This system explores SAP Order-to-Cash data using a graph + LLM interface.")
 
 st.title("📊 Order-to-Cash Graph Explorer")
 
@@ -171,22 +170,20 @@ query = st.text_input("Ask a question:")
 
 if query:
     try:
-        llm_output = interpret_query_with_llm(query)
-        action, order_id = parse_llm_output(llm_output)
+        with st.spinner("Processing query..."):
+            llm_output = interpret_query_with_llm(query)
+            action, order_id = parse_llm_output(llm_output)
 
-        if action == "TRACE_ORDER" and order_id != "NONE":
+        # 🔥 FLEXIBLE MATCHING (FIXED)
+        if action and "TRACE" in action and order_id != "NONE":
             flow = trace_flow(order_id)
+            st.success("📦 Order Flow:\n\n" + "\n➡️ ".join(flow))
 
-            if flow:
-                st.success(" → ".join(flow))
-            else:
-                st.warning("No flow found")
-
-        elif action == "FIND_BROKEN_ORDERS":
+        elif action and "BROKEN" in action:
             st.error("❌ Broken Orders:")
             st.write(broken_orders())
 
-        elif action == "TOP_ORDERS":
+        elif action and "TOP" in action:
             st.info("📊 Top Orders:")
             st.write(top_orders())
 
